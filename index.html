@@ -329,6 +329,25 @@
             z-index: 105;
         }
 
+        #btn-undo-art, #btn-redo-art {
+            position: absolute;
+            top: 430px;
+            cursor: pointer;
+            z-index: 105;
+        }
+        #btn-undo-art { right: 144px; }
+        #btn-redo-art { right: 94px; }
+
+        #btn-undo-cook, #btn-redo-cook {
+            position: absolute;
+            top: 580px;
+            left: 50%;
+            cursor: pointer;
+            z-index: 2600;
+        }
+        #btn-undo-cook { transform: translateX(-60px); }
+        #btn-redo-cook { transform: translateX(20px); }
+
         #color-palette {
             position: relative;
             transform: translateY(-15px); /* Exactly 15px up from baseline */
@@ -555,6 +574,8 @@
         <div id="art-window">
             <img src="name.png" id="art-name-overlay" alt="이름레이어">
             <img src="X.png" id="exit-btn" alt="닫기">
+            <img src="ud.png" id="btn-undo-art" class="btn">
+            <img src="rd.png" id="btn-redo-art" class="btn">
             <img src="eraser.png" id="btn-eraser" class="btn" alt="지우개">
 
             <div id="art-group-container" style="position: absolute; left: 50%; transform: translateX(-50%); width: 365px; height: 100%; top: 0; pointer-events: none;">
@@ -632,6 +653,8 @@
 
         <!-- 요리 드로잉 창 -->
         <div id="cook-drawing-window" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index: 2500; display:none; background:url('cbg.png') center center / cover no-repeat;">
+            <img src="ud.png" id="btn-undo-cook" class="btn">
+            <img src="rd.png" id="btn-redo-cook" class="btn">
             <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); display:flex; flex-direction:column; align-items:center;">
                 <div id="canvas3-container" style="width:150px; height:150px; border-radius:50%; border:none; overflow:hidden; background:white; cursor:crosshair;">
                     <canvas id="c3" width="150" height="150" style="width:100%; height:100%;"></canvas>
@@ -692,7 +715,7 @@
             'y.png', 'a.png', 'a1.png', 'art.png', 'house.png', 'name.png', 'X.png', 'eraser.png',
             'brush.png', 'xw.png', 'OK.png', 'NO.png', 'ns.png', 'end.png', 'ebg.png',
             'cook.png', 'cook1.png', 'cook2.png', 'cook3.png', 'cookbg.png', 'nice.png', 'good.png', 'mi.png', 'sl.png', 'al.png', 'bl.png', 'cl.png', 're.png', 'door.png', 'w5.png', 'w6.png',
-            'js.png', 'go.png', '1.png', '2.png', '3.png', '4.png', '5.png', '6.png', '7.png', '8.png', '9.png', 'a2.png', 'endg.png', 'cbg.png', 'ebg2.png', 'ck.png', 'save.png'
+            'js.png', 'go.png', '1.png', '2.png', '3.png', '4.png', '5.png', '6.png', '7.png', '8.png', '9.png', 'a2.png', 'endg.png', 'cbg.png', 'ebg2.png', 'ck.png', 'save.png', 'ud.png', 'rd.png'
         ];
         const loadedAssets = {};
         let assetsToLoadCount = assetUrls.length;
@@ -1169,10 +1192,46 @@
         const ctx1 = c1.getContext('2d');
         const ctx2 = c2.getContext('2d');
         let currentBrushColor = '#262626';
-        let isDrawing = false;
         let isEraser = false;
         let brushSizeStage = 0; // 0, 1, 2
         const brushSizes = [2, 5, 10];
+
+        let artHistory = [];
+        let artRedoStack = [];
+        let cookHistory = [];
+        let cookRedoStack = [];
+
+        function redraw(page) {
+            if (page === 'art') {
+                ctx1.clearRect(0, 0, c1.width, c1.height);
+                ctx2.clearRect(0, 0, c2.width, c2.height);
+                artHistory.forEach(stroke => {
+                    const ctx = stroke.canvasId === 'c1' ? ctx1 : ctx2;
+                    drawStroke(ctx, stroke);
+                });
+            } else if (page === 'cook') {
+                ctx3.clearRect(0, 0, c3.width, c3.height);
+                cookHistory.forEach(stroke => {
+                    drawStroke(ctx3, stroke);
+                });
+            }
+        }
+
+        function drawStroke(ctx, stroke) {
+            ctx.beginPath();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = stroke.width;
+            ctx.globalCompositeOperation = stroke.mode;
+            if (stroke.points.length > 0) {
+                ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+                for (let i = 1; i < stroke.points.length; i++) {
+                    ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+                }
+                ctx.stroke();
+            }
+        }
 
         function initDrawing() {
             const dots = document.querySelectorAll('.dot:not(.cook-dot)');
@@ -1198,6 +1257,8 @@
         }
 
         function setupCanvas(canvas, ctx, isCook = false) {
+            let localIsDrawing = false;
+            let localCurrentStroke = null;
 
             function getPos(e) {
                 const rect = canvas.getBoundingClientRect();
@@ -1234,39 +1295,61 @@
                 const win = isCook ? 'cook-drawing-window' : 'art-window';
                 if (document.getElementById(win).style.display !== 'block') return;
 
-                isDrawing = true;
+                localIsDrawing = true;
                 const pos = getPos(e);
+
+                let color, width, mode;
+                if (isCook) {
+                    mode = isEraserCook ? 'destination-out' : 'source-over';
+                    color = currentBrushColorCook;
+                    const baseWidth = brushSizes[brushSizeStageCook];
+                    width = isEraserCook ? baseWidth * 4 : baseWidth;
+                } else {
+                    mode = 'source-over';
+                    color = isEraser ? '#FFFFFF' : currentBrushColor;
+                    const baseWidth = brushSizes[brushSizeStage];
+                    width = isEraser ? baseWidth * 4 : baseWidth;
+                }
+
+                localCurrentStroke = {
+                    canvasId: canvas.id,
+                    points: [pos],
+                    color: color,
+                    width: width,
+                    mode: mode
+                };
+
                 ctx.beginPath();
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
+                ctx.strokeStyle = color;
+                ctx.lineWidth = width;
+                ctx.globalCompositeOperation = mode;
                 ctx.moveTo(pos.x, pos.y);
                 if (e.cancelable) e.preventDefault();
             }
             function move(e) {
-                if (!isDrawing) return;
+                if (!localIsDrawing || !localCurrentStroke) return;
                 const pos = getPos(e);
-
-                if (isCook) {
-                    if (isEraserCook) {
-                        ctx.globalCompositeOperation = 'destination-out';
-                    } else {
-                        ctx.globalCompositeOperation = 'source-over';
-                        ctx.strokeStyle = currentBrushColorCook;
-                    }
-                    const currentWidth = brushSizes[brushSizeStageCook];
-                    ctx.lineWidth = isEraserCook ? currentWidth * 4 : currentWidth;
-                } else {
-                    ctx.globalCompositeOperation = 'source-over';
-                    ctx.strokeStyle = isEraser ? '#FFFFFF' : currentBrushColor;
-                    const currentWidth = brushSizes[brushSizeStage];
-                    ctx.lineWidth = isEraser ? currentWidth * 4 : currentWidth;
-                }
+                localCurrentStroke.points.push(pos);
 
                 ctx.lineTo(pos.x, pos.y);
                 ctx.stroke();
                 if (e.cancelable) e.preventDefault();
             }
-            function end() { isDrawing = false; }
+            function end() {
+                if (localIsDrawing && localCurrentStroke) {
+                    if (isCook) {
+                        cookHistory.push(localCurrentStroke);
+                        cookRedoStack = [];
+                    } else {
+                        artHistory.push(localCurrentStroke);
+                        artRedoStack = [];
+                    }
+                }
+                localIsDrawing = false;
+                localCurrentStroke = null;
+            }
             canvas.addEventListener('mousedown', start);
             canvas.addEventListener('mousemove', move);
             window.addEventListener('mouseup', end);
@@ -1542,7 +1625,34 @@
             dots.forEach((dot, i) => { dot.style.backgroundColor = (i === brushSizeStageCook) ? '#7D7D7D' : '#FFFFFF'; });
         };
 
+        document.getElementById('btn-undo-art').onclick = () => {
+            if (artHistory.length > 0) {
+                artRedoStack.push(artHistory.pop());
+                redraw('art');
+            }
+        };
+        document.getElementById('btn-redo-art').onclick = () => {
+            if (artRedoStack.length > 0) {
+                artHistory.push(artRedoStack.pop());
+                redraw('art');
+            }
+        };
+        document.getElementById('btn-undo-cook').onclick = () => {
+            if (cookHistory.length > 0) {
+                cookRedoStack.push(cookHistory.pop());
+                redraw('cook');
+            }
+        };
+        document.getElementById('btn-redo-cook').onclick = () => {
+            if (cookRedoStack.length > 0) {
+                cookHistory.push(cookRedoStack.pop());
+                redraw('cook');
+            }
+        };
+
         document.getElementById('btn-reset-cook').onclick = () => {
+            cookHistory = [];
+            cookRedoStack = [];
             document.getElementById('cook-drawing-window').style.display = 'none';
             startCookGame();
         };
