@@ -329,24 +329,24 @@
             z-index: 105;
         }
 
-        #btn-undo-art, #btn-redo-art {
+        #art-ud-rd-group {
             position: absolute;
-            top: 430px;
-            cursor: pointer;
+            top: 440px;
+            right: 104px;
+            display: flex;
+            gap: 10px;
             z-index: 105;
         }
-        #btn-undo-art { right: 144px; }
-        #btn-redo-art { right: 94px; }
 
-        #btn-undo-cook, #btn-redo-cook {
+        #cook-ud-rd-group {
             position: absolute;
             top: 580px;
             left: 50%;
-            cursor: pointer;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
             z-index: 2600;
         }
-        #btn-undo-cook { transform: translateX(-60px); }
-        #btn-redo-cook { transform: translateX(20px); }
 
         #color-palette {
             position: relative;
@@ -574,8 +574,10 @@
         <div id="art-window">
             <img src="name.png" id="art-name-overlay" alt="이름레이어">
             <img src="X.png" id="exit-btn" alt="닫기">
-            <img src="ud.png" id="btn-undo-art" class="btn">
-            <img src="rd.png" id="btn-redo-art" class="btn">
+            <div id="art-ud-rd-group">
+                <img src="ud.png" id="btn-undo-art" class="btn">
+                <img src="rd.png" id="btn-redo-art" class="btn">
+            </div>
             <img src="eraser.png" id="btn-eraser" class="btn" alt="지우개">
 
             <div id="art-group-container" style="position: absolute; left: 50%; transform: translateX(-50%); width: 365px; height: 100%; top: 0; pointer-events: none;">
@@ -653,8 +655,10 @@
 
         <!-- 요리 드로잉 창 -->
         <div id="cook-drawing-window" style="position:absolute; top:0; left:0; width:100%; height:100%; z-index: 2500; display:none; background:url('cbg.png') center center / cover no-repeat;">
-            <img src="ud.png" id="btn-undo-cook" class="btn">
-            <img src="rd.png" id="btn-redo-cook" class="btn">
+            <div id="cook-ud-rd-group">
+                <img src="ud.png" id="btn-undo-cook" class="btn">
+                <img src="rd.png" id="btn-redo-cook" class="btn">
+            </div>
             <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); display:flex; flex-direction:column; align-items:center;">
                 <div id="canvas3-container" style="width:150px; height:150px; border-radius:50%; border:none; overflow:hidden; background:white; cursor:crosshair;">
                     <canvas id="c3" width="150" height="150" style="width:100%; height:100%;"></canvas>
@@ -1331,10 +1335,20 @@
             function move(e) {
                 if (!localIsDrawing || !localCurrentStroke) return;
                 const pos = getPos(e);
-                localCurrentStroke.points.push(pos);
+                const points = localCurrentStroke.points;
+                const lastPos = points[points.length - 1];
+                points.push(pos);
 
+                ctx.beginPath();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = localCurrentStroke.color;
+                ctx.lineWidth = localCurrentStroke.width;
+                ctx.globalCompositeOperation = localCurrentStroke.mode;
+                ctx.moveTo(lastPos.x, lastPos.y);
                 ctx.lineTo(pos.x, pos.y);
                 ctx.stroke();
+
                 if (e.cancelable) e.preventDefault();
             }
             function end() {
