@@ -1834,7 +1834,9 @@
             const link = document.createElement('a');
             link.download = 'memory.png';
             link.href = saveCanvas.toDataURL('image/png');
+            document.body.appendChild(link);
             link.click();
+            document.body.removeChild(link);
         }
 
         requestAnimationFrame(update);
